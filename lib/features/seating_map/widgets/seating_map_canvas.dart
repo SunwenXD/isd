@@ -13,6 +13,7 @@ class SeatingMapCanvas extends StatelessWidget {
     required this.regions,
     required this.draftRect,
     required this.selectedIndex,
+    required this.highlightedIndex,
     required this.onPanStart,
     required this.onPanUpdate,
     required this.onPanEnd,
@@ -26,6 +27,7 @@ class SeatingMapCanvas extends StatelessWidget {
   final List<SeatRegion> regions;
   final Rect? draftRect;
   final int? selectedIndex;
+  final int? highlightedIndex;
   final GestureDragStartCallback onPanStart;
   final GestureDragUpdateCallback onPanUpdate;
   final GestureDragEndCallback onPanEnd;
@@ -57,6 +59,7 @@ class SeatingMapCanvas extends StatelessWidget {
                   regions: regions,
                   draftRect: draftRect,
                   selectedIndex: selectedIndex,
+                  highlightedIndex: highlightedIndex,
                   canvasSize: Size(mapWidth, mapHeight),
                 ),
               ),

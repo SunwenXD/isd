@@ -10,7 +10,7 @@ class SeatingMapDatabase {
   static final SeatingMapDatabase instance = SeatingMapDatabase._();
 
   static const _databaseName = 'seating_map.db';
-  static const _databaseVersion = 1;
+  static const _databaseVersion = 2;
   static const tableSeatRegions = 'seat_regions';
 
   Database? _database;
@@ -30,6 +30,7 @@ class SeatingMapDatabase {
           CREATE TABLE $tableSeatRegions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL DEFAULT '',
+            keywords TEXT NOT NULL DEFAULT '',
             left_value REAL NOT NULL,
             top_value REAL NOT NULL,
             right_value REAL NOT NULL,
@@ -37,6 +38,13 @@ class SeatingMapDatabase {
             sort_order INTEGER NOT NULL DEFAULT 0
           )
         ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute(
+            "ALTER TABLE $tableSeatRegions ADD COLUMN keywords TEXT NOT NULL DEFAULT ''",
+          );
+        }
       },
     );
 

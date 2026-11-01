@@ -9,12 +9,14 @@ class SeatingMapPainter extends CustomPainter {
     required this.regions,
     required this.draftRect,
     required this.selectedIndex,
+    required this.highlightedIndex,
     required this.canvasSize,
   });
 
   final List<SeatRegion> regions;
   final Rect? draftRect;
   final int? selectedIndex;
+  final int? highlightedIndex;
   final Size canvasSize;
 
   @override
@@ -32,6 +34,15 @@ class SeatingMapPainter extends CustomPainter {
       ..color = Colors.lightBlueAccent
       ..style = PaintingStyle.stroke
       ..strokeWidth = 5;
+
+    final highlightedFillPaint = Paint()
+      ..color = Colors.cyanAccent.withOpacity(0.28)
+      ..style = PaintingStyle.fill;
+
+    final highlightedBorderPaint = Paint()
+      ..color = Colors.cyanAccent
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 7;
 
     final draftPaint = Paint()
       ..color = Colors.redAccent
@@ -51,9 +62,16 @@ class SeatingMapPainter extends CustomPainter {
       final rect = toCanvasRect(regions[index].rect);
 
       canvas.drawRect(rect, fillPaint);
+      if (index == highlightedIndex) {
+        canvas.drawRect(rect, highlightedFillPaint);
+      }
       canvas.drawRect(
         rect,
-        index == selectedIndex ? selectedPaint : borderPaint,
+        index == highlightedIndex
+            ? highlightedBorderPaint
+            : index == selectedIndex
+                ? selectedPaint
+                : borderPaint,
       );
 
       final name = regions[index].name.trim();

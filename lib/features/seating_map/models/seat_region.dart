@@ -10,24 +10,28 @@ class SeatRegion {
     required this.rect,
     required this.sortOrder,
     this.id,
+    this.keywords = const [],
   });
 
   final int? id;
   final String name;
   final Rect rect;
   final int sortOrder;
+  final List<String> keywords;
 
   SeatRegion copyWith({
     int? id,
     String? name,
     Rect? rect,
     int? sortOrder,
+    List<String>? keywords,
   }) {
     return SeatRegion(
       id: id ?? this.id,
       name: name ?? this.name,
       rect: rect ?? this.rect,
       sortOrder: sortOrder ?? this.sortOrder,
+      keywords: keywords ?? this.keywords,
     );
   }
 
@@ -40,6 +44,7 @@ class SeatRegion {
       'right_value': rect.right,
       'bottom_value': rect.bottom,
       'sort_order': sortOrder,
+      'keywords': keywords.join(','),
     };
   }
 
@@ -54,6 +59,11 @@ class SeatRegion {
         (map['bottom_value'] as num).toDouble(),
       ),
       sortOrder: map['sort_order'] as int,
+      keywords: (map['keywords'] as String? ?? '')
+          .split(',')
+          .map((keyword) => keyword.trim())
+          .where((keyword) => keyword.isNotEmpty)
+          .toList(growable: false),
     );
   }
 }

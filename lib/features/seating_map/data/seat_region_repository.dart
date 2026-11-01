@@ -24,6 +24,23 @@ class SeatRegionRepository {
     return rows.map(SeatRegion.fromMap).toList(growable: false);
   }
 
+
+  /// 以姓名或任一關鍵字進行部分文字比對。
+  /// 空白查詢回傳空清單；查詢字串可只包含一個字。
+  Future<List<SeatRegion>> search(String query) async {
+    final normalizedQuery = query.trim();
+    if (normalizedQuery.isEmpty) return const [];
+
+    final regions = await getAll();
+    final needle = normalizedQuery.toLowerCase();
+    return regions.where((region) {
+      final searchableValues = [region.name, ...region.keywords];
+      return searchableValues.any(
+        (value) => value.toLowerCase().contains(needle),
+      );
+    }).toList(growable: false);
+  }
+
   Future<SeatRegion> insert(SeatRegion region) async {
     final db = await _databaseProvider.database;
     final id = await db.insert(

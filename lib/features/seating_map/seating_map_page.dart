@@ -31,6 +31,10 @@ class _SeatingMapPageState extends State<SeatingMapPage> {
   final TransformationController _transformationController =
       TransformationController();
   final SeatRegionRepository _repository = SeatRegionRepository();
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  int? _highlightedRegionId;
+  Size? _mapViewportSize;
 
   MapMode _mode = MapMode.browse;
   final List<SeatRegion> _regions = [];
@@ -54,6 +58,7 @@ class _SeatingMapPageState extends State<SeatingMapPage> {
   @override
   void dispose() {
     _transformationController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -347,21 +352,31 @@ class _SeatingMapPageState extends State<SeatingMapPage> {
     if (index == null || _isSaving) return;
 
     final originalRegion = _regions[index];
-    final name = await showDialog<String>(
+    final result = await showDialog<Map<String, Object>>(
       context: context,
       builder: (_) => NameEditorDialog(
         initialName: originalRegion.name,
+        initialKeywords: originalRegion.keywords,
       ),
     );
 
-    if (!mounted || name == null || name == originalRegion.name) return;
+    if (!mounted || result == null) return;
+    final name = result['name'] as String;
+    final keywords = result['keywords'] as List<String>;
+    if (name == originalRegion.name &&
+        keywords.join('\u0000') == originalRegion.keywords.join('\u0000')) {
+      return;
+    }
 
     // 以資料庫 id 尋找原本的座位框，不依賴對話框開啟前的索引。
     final currentIndex =
         _regions.indexWhere((region) => region.id == originalRegion.id);
     if (currentIndex == -1) return;
 
-    final updatedRegion = _regions[currentIndex].copyWith(name: name);
+    final updatedRegion = _regions[currentIndex].copyWith(
+      name: name,
+      keywords: keywords,
+    );
     setState(() => _isSaving = true);
 
     try {
@@ -376,6 +391,54 @@ class _SeatingMapPageState extends State<SeatingMapPage> {
       setState(() => _isSaving = false);
       _showError('儲存姓名', error);
     }
+  }
+
+  List<int> get _searchResultIndices {
+    final query = _searchQuery.trim().toLowerCase();
+    if (query.isEmpty) return const [];
+
+    return [
+      for (var index = 0; index < _regions.length; index++)
+        if ([_regions[index].name, ..._regions[index].keywords]
+            .any((value) => value.toLowerCase().contains(query)))
+          index,
+    ];
+  }
+
+  void _focusRegion(int index, Size viewportSize) {
+    if (index < 0 || index >= _regions.length) return;
+    final region = _regions[index];
+    final rect = Rect.fromLTRB(
+      region.rect.left * mapWidth,
+      region.rect.top * mapHeight,
+      region.rect.right * mapWidth,
+      region.rect.bottom * mapHeight,
+    );
+
+    // 讓目標區域完整出現在可視範圍內，並保留四周空間。
+    final safeWidth = (viewportSize.width - 80).clamp(1.0, double.infinity).toDouble();
+    final safeHeight = (viewportSize.height - 80).clamp(1.0, double.infinity).toDouble();
+    final scale = math.min(
+      5.0,
+      math.max(
+        0.5,
+        math.min(
+          safeWidth / math.max(rect.width, 1),
+          safeHeight / math.max(rect.height, 1),
+        ),
+      ),
+    ).toDouble();
+    final translationX = viewportSize.width / 2 - rect.center.dx * scale;
+    final translationY = viewportSize.height / 2 - rect.center.dy * scale;
+
+    _transformationController.value = Matrix4.identity()
+      ..translate(translationX, translationY)
+      ..scale(scale);
+
+    setState(() {
+      _highlightedRegionId = region.id;
+      _mode = MapMode.browse;
+    });
   }
 
   void _resetView() {
@@ -442,6 +505,67 @@ class _SeatingMapPageState extends State<SeatingMapPage> {
                 )
               : Column(
                   children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: (value) {
+                          setState(() {
+                            _searchQuery = value;
+                            // 搜尋條件改變時，先取消上一筆結果的高亮。
+                            _highlightedRegionId = null;
+                          });
+                        },
+                        decoration: InputDecoration(
+                          prefixIcon: const Icon(Icons.search),
+                          labelText: '搜尋姓名、部門或座位關鍵字',
+                          hintText: '可輸入單字，例如：王、資訊、A-01',
+                          border: const OutlineInputBorder(),
+                          suffixIcon: _searchQuery.isEmpty
+                              ? null
+                              : IconButton(
+                                  tooltip: '清除搜尋',
+                                  icon: const Icon(Icons.clear),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    setState(() {
+                                      _searchQuery = '';
+                                      _highlightedRegionId = null;
+                                    });
+                                  },
+                                ),
+                        ),
+                      ),
+                    ),
+                    if (_searchQuery.trim().isNotEmpty)
+                      SizedBox(
+                        height: math.min(160.0, 48.0 * _searchResultIndices.length + 8),
+                        child: _searchResultIndices.isEmpty
+                            ? const Center(child: Text('找不到符合的區域'))
+                            : ListView.builder(
+                                itemCount: _searchResultIndices.length,
+                                itemBuilder: (context, resultIndex) {
+                                  final regionIndex = _searchResultIndices[resultIndex];
+                                  final region = _regions[regionIndex];
+                                  return ListTile(
+                                    dense: true,
+                                    leading: const Icon(Icons.location_on_outlined),
+                                    title: Text(region.name.isEmpty
+                                        ? '區域 ${regionIndex + 1}（未命名）'
+                                        : region.name),
+                                    subtitle: region.keywords.isEmpty
+                                        ? null
+                                        : Text(region.keywords.join('、')),
+                                    onTap: () {
+                                      final viewport = _mapViewportSize;
+                                      if (viewport != null) {
+                                        _focusRegion(regionIndex, viewport);
+                                      }
+                                    },
+                                  );
+                                },
+                              ),
+                      ),
                     SeatingMapToolbar(
                       mode: _mode,
                       hasSelection: _selectedIndex != null,
@@ -450,17 +574,29 @@ class _SeatingMapPageState extends State<SeatingMapPage> {
                       onDelete: _deleteSelected,
                     ),
                     Expanded(
-                      child: SeatingMapCanvas(
-                        mapWidth: mapWidth,
-                        mapHeight: mapHeight,
-                        transformationController: _transformationController,
-                        mode: _mode,
-                        regions: _regions,
-                        draftRect: _draftRect,
-                        selectedIndex: _selectedIndex,
-                        onPanStart: _onPanStart,
-                        onPanUpdate: _onPanUpdate,
-                        onPanEnd: _onPanEnd,
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final viewportSize = Size(
+                            constraints.maxWidth,
+                            constraints.maxHeight,
+                          );
+                          _mapViewportSize = viewportSize;
+                          return SeatingMapCanvas(
+                            mapWidth: mapWidth,
+                            mapHeight: mapHeight,
+                            transformationController: _transformationController,
+                            mode: _mode,
+                            regions: _regions,
+                            draftRect: _draftRect,
+                            selectedIndex: _selectedIndex,
+                            highlightedIndex: _regions.indexWhere(
+                              (region) => region.id == _highlightedRegionId,
+                            ),
+                            onPanStart: _onPanStart,
+                            onPanUpdate: _onPanUpdate,
+                            onPanEnd: _onPanEnd,
+                          );
+                        },
                       ),
                     ),
                     SeatRegionList(

@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 class NameEditorDialog extends StatefulWidget {
   const NameEditorDialog({
     required this.initialName,
+    required this.initialKeywords,
     super.key,
   });
 
   final String initialName;
+  final List<String> initialKeywords;
 
   @override
   State<NameEditorDialog> createState() => _NameEditorDialogState();
@@ -15,16 +17,21 @@ class NameEditorDialog extends StatefulWidget {
 
 class _NameEditorDialogState extends State<NameEditorDialog> {
   late final TextEditingController _controller;
+  late final TextEditingController _keywordsController;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.initialName);
+    _keywordsController = TextEditingController(
+      text: widget.initialKeywords.join(', '),
+    );
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _keywordsController.dispose();
     super.dispose();
   }
 
@@ -32,19 +39,34 @@ class _NameEditorDialogState extends State<NameEditorDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(widget.initialName.isEmpty ? '設定姓名' : '修改姓名'),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        maxLength: 30,
-        decoration: const InputDecoration(
-          labelText: '姓名',
-          hintText: '請輸入姓名',
-          border: OutlineInputBorder(),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              maxLength: 30,
+              decoration: const InputDecoration(
+                labelText: '姓名／區域名稱',
+                hintText: '例如：王小明',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _keywordsController,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                labelText: '搜尋關鍵字',
+                hintText: '以逗號分隔，例如：資訊組, A-01, 小明',
+                helperText: '符合任一關鍵字即可搜尋',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
         ),
-        textInputAction: TextInputAction.done,
-        onSubmitted: (value) {
-          Navigator.of(context).pop(value.trim());
-        },
       ),
       actions: [
         TextButton(
@@ -53,7 +75,15 @@ class _NameEditorDialogState extends State<NameEditorDialog> {
         ),
         FilledButton(
           onPressed: () {
-            Navigator.of(context).pop(_controller.text.trim());
+            Navigator.of(context).pop(<String, Object>{
+              'name': _controller.text.trim(),
+              'keywords': _keywordsController.text
+                  .split(RegExp(r'[,，;；\n]'))
+                  .map((keyword) => keyword.trim())
+                  .where((keyword) => keyword.isNotEmpty)
+                  .toSet()
+                  .toList(),
+            });
           },
           child: const Text('確認'),
         ),
