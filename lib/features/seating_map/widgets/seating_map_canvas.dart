@@ -35,7 +35,8 @@ class SeatingMapCanvas extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Colors.black12,
+      clipBehavior: Clip.hardEdge,
+      decoration: const BoxDecoration(),
       child: InteractiveViewer(
         transformationController: transformationController,
         constrained: false,
@@ -50,10 +51,7 @@ class SeatingMapCanvas extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              Image.asset(
-                'assets/images/seating_map.png',
-                fit: BoxFit.fill,
-              ),
+              Image.asset('assets/images/seating_map.png', fit: BoxFit.fill),
               CustomPaint(
                 painter: SeatingMapPainter(
                   regions: regions,

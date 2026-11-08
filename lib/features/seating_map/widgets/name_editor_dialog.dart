@@ -38,6 +38,7 @@ class _NameEditorDialogState extends State<NameEditorDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      scrollable: true,
       title: Text(widget.initialName.isEmpty ? '設定姓名' : '修改姓名'),
       content: SizedBox(
         width: 360,
@@ -60,8 +61,8 @@ class _NameEditorDialogState extends State<NameEditorDialog> {
               maxLines: 2,
               decoration: const InputDecoration(
                 labelText: '搜尋關鍵字',
-                hintText: '以逗號分隔，例如：資訊組, A-01, 小明',
-                helperText: '符合任一關鍵字即可搜尋',
+                hintText: '以逗號或中文逗號分隔，例如：資訊組，A-01, 小明',
+                helperText: '支援 , 和 ，；符合任一關鍵字即可搜尋',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -78,7 +79,7 @@ class _NameEditorDialogState extends State<NameEditorDialog> {
             Navigator.of(context).pop(<String, Object>{
               'name': _controller.text.trim(),
               'keywords': _keywordsController.text
-                  .split(RegExp(r'[,，;；\n]'))
+                  .split(RegExp(r'[,，;；\n]+'))
                   .map((keyword) => keyword.trim())
                   .where((keyword) => keyword.isNotEmpty)
                   .toSet()

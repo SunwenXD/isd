@@ -25,6 +25,7 @@ class SeatingMapDatabase {
     final openedDatabase = await openDatabase(
       fullPath,
       version: _databaseVersion,
+      //創建sql
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE $tableSeatRegions (
@@ -39,6 +40,7 @@ class SeatingMapDatabase {
           )
         ''');
       },
+      //更新
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute(
