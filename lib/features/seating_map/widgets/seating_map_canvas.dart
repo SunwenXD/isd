@@ -14,6 +14,7 @@ class SeatingMapCanvas extends StatelessWidget {
     required this.draftRect,
     required this.selectedIndex,
     required this.highlightedIndex,
+    required this.rotationQuarterTurns,
     required this.onPanStart,
     required this.onPanUpdate,
     required this.onPanEnd,
@@ -28,51 +29,73 @@ class SeatingMapCanvas extends StatelessWidget {
   final Rect? draftRect;
   final int? selectedIndex;
   final int? highlightedIndex;
+  final int rotationQuarterTurns;
   final GestureDragStartCallback onPanStart;
   final GestureDragUpdateCallback onPanUpdate;
   final GestureDragEndCallback onPanEnd;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      clipBehavior: Clip.hardEdge,
-      decoration: const BoxDecoration(),
-      child: InteractiveViewer(
-        transformationController: transformationController,
-        constrained: false,
-        panEnabled: mode == MapMode.browse,
-        scaleEnabled: mode == MapMode.browse,
-        minScale: 0.5,
-        maxScale: 5,
-        boundaryMargin: const EdgeInsets.all(1000),
-        child: SizedBox(
-          width: mapWidth,
-          height: mapHeight,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Image.asset('assets/images/seating_map.png', fit: BoxFit.fill),
-              CustomPaint(
-                painter: SeatingMapPainter(
-                  regions: regions,
-                  draftRect: draftRect,
-                  selectedIndex: selectedIndex,
-                  highlightedIndex: highlightedIndex,
-                  canvasSize: Size(mapWidth, mapHeight),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 最小縮放比例至少要讓底圖覆蓋可視區域，避免拖曳時露出灰色空白。
+        final isQuarterTurn = rotationQuarterTurns.isOdd;
+        final displayedWidth = isQuarterTurn ? mapHeight : mapWidth;
+        final displayedHeight = isQuarterTurn ? mapWidth : mapHeight;
+        final minScale = <double>[
+          0.1,
+          constraints.maxWidth / displayedWidth,
+          constraints.maxHeight / displayedHeight,
+        ].reduce((a, b) => a > b ? a : b).clamp(0.1, 5.0).toDouble();
+
+        return Container(
+          clipBehavior: Clip.hardEdge,
+          decoration: const BoxDecoration(),
+          child: InteractiveViewer(
+            transformationController: transformationController,
+            constrained: false,
+            panEnabled: mode == MapMode.browse,
+            scaleEnabled: mode == MapMode.browse,
+            minScale: minScale,
+            maxScale: 5,
+            boundaryMargin: EdgeInsets.zero,
+            clipBehavior: Clip.hardEdge,
+            child: RotatedBox(
+              quarterTurns: rotationQuarterTurns,
+              child: SizedBox(
+                width: mapWidth,
+                height: mapHeight,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.asset(
+                      'assets/images/seating_map.png',
+                      fit: BoxFit.fill,
+                    ),
+                    CustomPaint(
+                      painter: SeatingMapPainter(
+                        regions: regions,
+                        draftRect: draftRect,
+                        selectedIndex: selectedIndex,
+                        highlightedIndex: highlightedIndex,
+                        canvasSize: Size(mapWidth, mapHeight),
+                      ),
+                    ),
+                    if (mode != MapMode.browse)
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onPanStart: onPanStart,
+                        onPanUpdate: onPanUpdate,
+                        onPanEnd: onPanEnd,
+                        child: const SizedBox.expand(),
+                      ),
+                  ],
                 ),
               ),
-              if (mode != MapMode.browse)
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onPanStart: onPanStart,
-                  onPanUpdate: onPanUpdate,
-                  onPanEnd: onPanEnd,
-                  child: const SizedBox.expand(),
-                ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

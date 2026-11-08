@@ -9,6 +9,8 @@ class SeatingMapToolbar extends StatelessWidget {
     required this.onModeChanged,
     required this.onEditName,
     required this.onDelete,
+    required this.rotationDegrees,
+    required this.onRotate,
     super.key,
   });
 
@@ -17,6 +19,8 @@ class SeatingMapToolbar extends StatelessWidget {
   final ValueChanged<MapMode> onModeChanged;
   final VoidCallback onEditName;
   final VoidCallback onDelete;
+  final int rotationDegrees;
+  final VoidCallback onRotate;
 
   @override
   Widget build(BuildContext context) {
@@ -65,6 +69,12 @@ class SeatingMapToolbar extends StatelessWidget {
                 onPressed: hasSelection ? onEditName : null,
                 icon: const Icon(Icons.edit),
               ),
+              IconButton(
+                tooltip: '順時針旋轉 90°（目前：$rotationDegrees°）',
+                onPressed: onRotate,
+                icon: const Icon(Icons.rotate_right),
+              ),
+              Text('$rotationDegrees°'),
               IconButton(
                 tooltip: '刪除選取矩形',
                 onPressed: hasSelection ? onDelete : null,

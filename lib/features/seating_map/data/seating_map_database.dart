@@ -3,14 +3,14 @@ import 'package:sqflite/sqflite.dart';
 
 /// 管理 SQLite 連線與資料表版本。
 ///
-/// 其他程式不要直接操作 SQL，統一透過 SeatRegionRepository。
+/// 資料表由各 Repository 存取，避免頁面直接操作 SQL。
 class SeatingMapDatabase {
   SeatingMapDatabase._();
 
   static final SeatingMapDatabase instance = SeatingMapDatabase._();
 
   static const _databaseName = 'seating_map.db';
-  static const _databaseVersion = 2;
+  static const _databaseVersion = 3;
   static const tableSeatRegions = 'seat_regions';
 
   Database? _database;
@@ -25,7 +25,6 @@ class SeatingMapDatabase {
     final openedDatabase = await openDatabase(
       fullPath,
       version: _databaseVersion,
-      //創建sql
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE $tableSeatRegions (
@@ -39,13 +38,26 @@ class SeatingMapDatabase {
             sort_order INTEGER NOT NULL DEFAULT 0
           )
         ''');
+        await db.execute('''
+          CREATE TABLE app_settings (
+            setting_key TEXT PRIMARY KEY,
+            setting_value TEXT NOT NULL
+          )
+        ''');
       },
-      //更新
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute(
             "ALTER TABLE $tableSeatRegions ADD COLUMN keywords TEXT NOT NULL DEFAULT ''",
           );
+        }
+        if (oldVersion < 3) {
+          await db.execute('''
+            CREATE TABLE app_settings (
+              setting_key TEXT PRIMARY KEY,
+              setting_value TEXT NOT NULL
+            )
+          ''');
         }
       },
     );
