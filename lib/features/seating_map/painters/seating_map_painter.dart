@@ -11,6 +11,8 @@ class SeatingMapPainter extends CustomPainter {
     required this.selectedIndex,
     required this.highlightedIndex,
     required this.canvasSize,
+    required this.rotationQuarterTurns,
+    required this.showAllRegions,
   });
 
   final List<SeatRegion> regions;
@@ -18,6 +20,8 @@ class SeatingMapPainter extends CustomPainter {
   final int? selectedIndex;
   final int? highlightedIndex;
   final Size canvasSize;
+  final int rotationQuarterTurns;
+  final bool showAllRegions;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -60,6 +64,23 @@ class SeatingMapPainter extends CustomPainter {
 
     for (var index = 0; index < regions.length; index++) {
       final rect = toCanvasRect(regions[index].rect);
+
+      // 查詢模式只顯示文字，不繪製矩形底色、外框或控制點。
+      // 所有區域名稱仍可辨識，搜尋命中的名稱改用醒目顏色。
+      if (!showAllRegions) {
+        final name = regions[index].name.trim();
+        if (name.isNotEmpty && rect.width > 0 && rect.height > 0) {
+          _paintRegionName(
+            canvas,
+            rect,
+            name,
+            color: index == highlightedIndex
+                ? Colors.cyanAccent
+                : Colors.black,
+          );
+        }
+        continue;
+      }
 
       canvas.drawRect(rect, fillPaint);
       if (index == highlightedIndex) {
@@ -110,15 +131,23 @@ class SeatingMapPainter extends CustomPainter {
 
   /// 依座位框長寬決定文字方向，並盡可能將文字縮放至框內。
   /// 當完整名稱需要的字體小於最小字級時，只顯示第一個字。
-  void _paintRegionName(Canvas canvas, Rect rect, String name) {
+  void _paintRegionName(
+    Canvas canvas,
+    Rect rect,
+    String name, {
+    Color color = Colors.black,
+  }) {
     const minFontSize = 8.0;
     const maxFontSize = 24.0;
     final padding = math.min(4.0, math.min(rect.width, rect.height) * 0.1);
 
-    final vertical = rect.height > rect.width;
+    final isQuarterTurn = rotationQuarterTurns.isOdd;
+    final displayWidth = isQuarterTurn ? rect.height : rect.width;
+    final displayHeight = isQuarterTurn ? rect.width : rect.height;
+    final vertical = displayHeight > displayWidth;
     final characters = name.runes.map(String.fromCharCode).toList();
-    final availableWidth = math.max(0.0, rect.width - padding * 2);
-    final availableHeight = math.max(0.0, rect.height - padding * 2);
+    final availableWidth = math.max(0.0, displayWidth - padding * 2);
+    final availableHeight = math.max(0.0, displayHeight - padding * 2);
 
     if (availableWidth <= 0 || availableHeight <= 0) return;
 
@@ -136,7 +165,7 @@ class SeatingMapPainter extends CustomPainter {
       text: TextSpan(
         text: displayText,
         style: TextStyle(
-          color: Colors.black,
+          color: color,
           fontSize: displayFontSize,
           fontWeight: FontWeight.w600,
           height: 1.0,
@@ -149,7 +178,16 @@ class SeatingMapPainter extends CustomPainter {
     )..layout(maxWidth: availableWidth);
 
     canvas.save();
-    canvas.clipRect(rect.deflate(1));
+    // RotatedBox 會連同整個 CustomPaint 一起旋轉；在每個文字中心反向旋轉，
+    // 讓文字在畫面上維持水平正向，而文字中心仍跟著座位框移動。
+    canvas.translate(rect.center.dx, rect.center.dy);
+    canvas.rotate(-rotationQuarterTurns * math.pi / 2);
+    canvas.translate(-rect.center.dx, -rect.center.dy);
+    canvas.clipRect(Rect.fromCenter(
+      center: rect.center,
+      width: displayWidth,
+      height: displayHeight,
+    ).deflate(1));
     textPainter.paint(
       canvas,
       Offset(

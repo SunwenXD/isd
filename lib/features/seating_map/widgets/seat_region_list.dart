@@ -32,13 +32,15 @@ class _SeatRegionListState extends State<SeatRegionList> {
 
     return SafeArea(
       top: false,
+      bottom: true,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        height: _expanded ? 180 : 48,
+        // 限制底部列表高度，並由 SafeArea 預留系統導覽列空間。
+        height: _expanded ? 148 : 44,
         child: Column(
           children: [
             SizedBox(
-              height: 48,
+              height: 44,
               child: Row(
                 children: [
                   const SizedBox(width: 16),

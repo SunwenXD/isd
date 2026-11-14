@@ -15,9 +15,9 @@ class SeatingMapCanvas extends StatelessWidget {
     required this.selectedIndex,
     required this.highlightedIndex,
     required this.rotationQuarterTurns,
-    required this.onPanStart,
-    required this.onPanUpdate,
-    required this.onPanEnd,
+    required this.onPointerDown,
+    required this.onPointerMove,
+    required this.onPointerUp,
     super.key,
   });
 
@@ -30,9 +30,9 @@ class SeatingMapCanvas extends StatelessWidget {
   final int? selectedIndex;
   final int? highlightedIndex;
   final int rotationQuarterTurns;
-  final GestureDragStartCallback onPanStart;
-  final GestureDragUpdateCallback onPanUpdate;
-  final GestureDragEndCallback onPanEnd;
+  final ValueChanged<PointerDownEvent> onPointerDown;
+  final ValueChanged<PointerMoveEvent> onPointerMove;
+  final ValueChanged<PointerEvent> onPointerUp;
 
   @override
   Widget build(BuildContext context) {
@@ -48,48 +48,55 @@ class SeatingMapCanvas extends StatelessWidget {
           constraints.maxHeight / displayedHeight,
         ].reduce((a, b) => a > b ? a : b).clamp(0.1, 5.0).toDouble();
 
-        return Container(
-          clipBehavior: Clip.hardEdge,
-          decoration: const BoxDecoration(),
-          child: InteractiveViewer(
-            transformationController: transformationController,
-            constrained: false,
-            panEnabled: mode == MapMode.browse,
-            scaleEnabled: mode == MapMode.browse,
-            minScale: minScale,
-            maxScale: 5,
-            boundaryMargin: EdgeInsets.zero,
+        return ClipRect(
+          child: Container(
             clipBehavior: Clip.hardEdge,
-            child: RotatedBox(
-              quarterTurns: rotationQuarterTurns,
-              child: SizedBox(
-                width: mapWidth,
-                height: mapHeight,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Image.asset(
-                      'assets/images/seating_map.png',
-                      fit: BoxFit.fill,
-                    ),
-                    CustomPaint(
-                      painter: SeatingMapPainter(
-                        regions: regions,
-                        draftRect: draftRect,
-                        selectedIndex: selectedIndex,
-                        highlightedIndex: highlightedIndex,
-                        canvasSize: Size(mapWidth, mapHeight),
+            decoration: const BoxDecoration(),
+            child: InteractiveViewer(
+              transformationController: transformationController,
+              constrained: false,
+              // 編輯模式由單指原始指標事件處理框與底圖拖曳；
+              // InteractiveViewer 保留雙指縮放辨識，避免 GestureDetector 的 onPan 搶走手勢。
+              panEnabled: mode == MapMode.browse,
+              scaleEnabled: true,
+              minScale: minScale,
+              maxScale: 5,
+              boundaryMargin: EdgeInsets.zero,
+              clipBehavior: Clip.hardEdge,
+              child: RotatedBox(
+                quarterTurns: rotationQuarterTurns,
+                child: SizedBox(
+                  width: mapWidth,
+                  height: mapHeight,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.asset(
+                        'assets/images/seating_map.png',
+                        fit: BoxFit.fill,
                       ),
-                    ),
-                    if (mode != MapMode.browse)
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onPanStart: onPanStart,
-                        onPanUpdate: onPanUpdate,
-                        onPanEnd: onPanEnd,
-                        child: const SizedBox.expand(),
+                      CustomPaint(
+                        painter: SeatingMapPainter(
+                          regions: regions,
+                          draftRect: draftRect,
+                          selectedIndex: selectedIndex,
+                          highlightedIndex: highlightedIndex,
+                          canvasSize: Size(mapWidth, mapHeight),
+                          rotationQuarterTurns: rotationQuarterTurns,
+                          showAllRegions: mode != MapMode.browse,
+                        ),
                       ),
-                  ],
+                      if (mode != MapMode.browse)
+                        Listener(
+                          behavior: HitTestBehavior.opaque,
+                          onPointerDown: onPointerDown,
+                          onPointerMove: onPointerMove,
+                          onPointerUp: onPointerUp,
+                          onPointerCancel: onPointerUp,
+                          child: const SizedBox.expand(),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
