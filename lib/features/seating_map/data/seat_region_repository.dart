@@ -41,6 +41,20 @@ class SeatRegionRepository {
     }).toList(growable: false);
   }
 
+  /// 以 transaction 一次替換所有座位框，避免匯入中斷造成資料不完整。
+  Future<void> replaceAll(List<SeatRegion> regions) async {
+    final db = await _databaseProvider.database;
+    await db.transaction((txn) async {
+      await txn.delete(SeatingMapDatabase.tableSeatRegions);
+      for (var index = 0; index < regions.length; index++) {
+        await txn.insert(
+          SeatingMapDatabase.tableSeatRegions,
+          regions[index].copyWith(sortOrder: index).toMap(),
+        );
+      }
+    });
+  }
+
   Future<SeatRegion> insert(SeatRegion region) async {
     final db = await _databaseProvider.database;
     final id = await db.insert(

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../models/seat_region.dart';
@@ -8,6 +10,7 @@ class SeatingMapCanvas extends StatelessWidget {
   const SeatingMapCanvas({
     required this.mapWidth,
     required this.mapHeight,
+    required this.imagePath,
     required this.transformationController,
     required this.mode,
     required this.regions,
@@ -23,6 +26,7 @@ class SeatingMapCanvas extends StatelessWidget {
 
   final double mapWidth;
   final double mapHeight;
+  final String? imagePath;
   final TransformationController transformationController;
   final MapMode mode;
   final List<SeatRegion> regions;
@@ -71,10 +75,21 @@ class SeatingMapCanvas extends StatelessWidget {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      Image.asset(
-                        'assets/images/seating_map.png',
-                        fit: BoxFit.fill,
-                      ),
+                      if (imagePath == null)
+                        Image.asset(
+                          'assets/images/seating_map.png',
+                          fit: BoxFit.fill,
+                        )
+                      else
+                        Image.file(
+                          File(imagePath!),
+                          fit: BoxFit.fill,
+                          errorBuilder: (context, error, stackTrace) =>
+                              const ColoredBox(
+                            color: Colors.black12,
+                            child: Center(child: Text('地圖圖片載入失敗')),
+                          ),
+                        ),
                       CustomPaint(
                         painter: SeatingMapPainter(
                           regions: regions,

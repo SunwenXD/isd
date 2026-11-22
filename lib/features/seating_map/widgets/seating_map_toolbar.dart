@@ -13,6 +13,9 @@ class SeatingMapToolbar extends StatelessWidget {
     required this.onDelete,
     required this.rotationDegrees,
     required this.onRotate,
+    required this.onImportImage,
+    required this.onExportData,
+    required this.onImportData,
     super.key,
   });
 
@@ -25,6 +28,9 @@ class SeatingMapToolbar extends StatelessWidget {
   final VoidCallback onDelete;
   final int rotationDegrees;
   final VoidCallback onRotate;
+  final VoidCallback onImportImage;
+  final VoidCallback onExportData;
+  final VoidCallback onImportData;
 
   @override
   Widget build(BuildContext context) {
@@ -89,6 +95,55 @@ class SeatingMapToolbar extends StatelessWidget {
                   icon: const Icon(Icons.delete_outline),
                 ),
               ],
+            ),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: onImportImage,
+                    icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
+                    label: const Text('匯入圖片'),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: onExportData,
+                    icon: const Icon(Icons.file_upload_outlined, size: 18),
+                    label: const Text('匯出資料'),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: onImportData,
+                    icon: const Icon(Icons.file_download_outlined, size: 18),
+                    label: const Text('匯入資料'),
+                  ),
+                ],
+              ),
             ),
           ],
         ],

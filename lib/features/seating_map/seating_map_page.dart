@@ -1,6 +1,12 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'data/seat_region_repository.dart';
 import 'data/seating_map_settings_repository.dart';
@@ -20,8 +26,11 @@ class SeatingMapPage extends StatefulWidget {
 
 class _SeatingMapPageState extends State<SeatingMapPage> {
   // 底圖採用固定的邏輯座標系統。
-  static const double mapWidth = 1086;
-  static const double mapHeight = 1448;
+  static const double defaultMapWidth = 1086;
+  static const double defaultMapHeight = 1448;
+  double mapWidth = defaultMapWidth;
+  double mapHeight = defaultMapHeight;
+  String? _imagePath;
 
   // 四角控制點的點選範圍，以底圖座標計算。
   static const double handleHitRadius = 30;
@@ -73,12 +82,16 @@ class _SeatingMapPageState extends State<SeatingMapPage> {
 
   Future<void> _loadRegions() async {
     try {
-      final results = await Future.wait<Object>([
+      final results = await Future.wait<Object?>([
         _repository.getAll(),
         _settingsRepository.getRotationQuarterTurns(),
+        _settingsRepository.getImagePath(),
+        _settingsRepository.getImageSize(defaultWidth: defaultMapWidth, defaultHeight: defaultMapHeight),
       ]);
       final regions = results[0] as List<SeatRegion>;
       final rotationQuarterTurns = results[1] as int;
+      final imagePath = results[2] as String?;
+      final imageSize = results[3] as Size;
       if (!mounted) return;
 
       setState(() {
@@ -86,6 +99,9 @@ class _SeatingMapPageState extends State<SeatingMapPage> {
           ..clear()
           ..addAll(regions);
         _rotationQuarterTurns = rotationQuarterTurns;
+        _imagePath = imagePath;
+        mapWidth = imageSize.width;
+        mapHeight = imageSize.height;
         _isLoading = false;
         _loadError = null;
       });
@@ -467,6 +483,277 @@ class _SeatingMapPageState extends State<SeatingMapPage> {
     }
   }
 
+  Future<void> _importImage() async {
+    if (!_isEditing || _isSaving) return;
+    final choice = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('匯入地圖圖片'),
+        content: const Text('要如何處理目前的座位框？\n\n「保留」會保留原有框的相對比例位置，並套用到新圖片。'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('保留座位資料')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('清空座位資料')),
+        ],
+      ),
+    );
+    if (choice == null) return;
+
+    // file_picker 13.x 使用 FilePicker.pickFile()，單檔直接回傳 PlatformFile?
+    // 不再使用 pickFiles() 的 allowMultiple / withData 參數。
+    PlatformFile? file;
+    try {
+      file = await FilePicker.pickFile(type: FileType.image);
+    } catch (error) {
+      _showError('選取圖片', error);
+      return;
+    }
+    if (file == null) return;
+
+    late final Uint8List bytes;
+    try {
+      // v13 改為選取後明確讀取檔案內容，支援暫存路徑及雲端檔案。
+      bytes = await file.readAsBytes();
+    } catch (error) {
+      _showError('讀取圖片', error);
+      return;
+    }
+
+    ui.Codec? codec;
+    ui.Image? decoded;
+    try {
+      codec = await ui.instantiateImageCodec(bytes);
+      decoded = (await codec.getNextFrame()).image;
+      final width = decoded.width.toDouble();
+      final height = decoded.height.toDouble();
+      final directory = await getApplicationDocumentsDirectory();
+      final extension = _imageExtension(file.name);
+      final destination = File('${directory.path}/seating_map_background.$extension');
+      await destination.writeAsBytes(bytes, flush: true);
+
+      setState(() => _isSaving = true);
+      if (choice) {
+        await _repository.replaceAll(const []);
+      }
+      await _settingsRepository.saveImagePath(destination.path);
+      await _settingsRepository.saveImageSize(Size(width, height));
+      if (!mounted) return;
+      setState(() {
+        _imagePath = destination.path;
+        mapWidth = width;
+        mapHeight = height;
+        if (choice) {
+          _regions.clear();
+          _selectedIndex = null;
+          _highlightedRegionId = null;
+        }
+        _isSaving = false;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) => _fitMapToViewport());
+    } catch (error) {
+      if (mounted) setState(() => _isSaving = false);
+      _showError('匯入圖片', error);
+    } finally {
+      decoded?.dispose();
+      codec?.dispose();
+    }
+  }
+
+  String _imageExtension(String name) {
+    final extension = name.contains('.') ? name.split('.').last.toLowerCase() : 'png';
+    return const {'jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'}.contains(extension)
+        ? extension
+        : 'png';
+  }
+
+  Future<void> _exportData() async {
+    try {
+      final regions = _regions.map((region) => {
+        'name': region.name,
+        'keywords': region.keywords,
+        'left': region.rect.left,
+        'top': region.rect.top,
+        'right': region.rect.right,
+        'bottom': region.rect.bottom,
+        'sortOrder': region.sortOrder,
+      }).toList();
+      String? imageBase64;
+      if (_imagePath != null) {
+        final imageFile = File(_imagePath!);
+        if (!await imageFile.exists()) {
+          throw StateError('目前設定的地圖圖片檔案不存在，請重新匯入圖片後再備份。');
+        }
+        imageBase64 = base64Encode(await imageFile.readAsBytes());
+      }
+      final payload = <String, Object?>{
+        'format': 'seating-map-backup',
+        'version': 1,
+        'rotationQuarterTurns': _rotationQuarterTurns,
+        'imageWidth': mapWidth,
+        'imageHeight': mapHeight,
+        'imageExtension': _imagePath == null ? null : _imageExtension(_imagePath!),
+        'imageBase64': imageBase64,
+        'regions': regions,
+      };
+      final bytes = Uint8List.fromList(utf8.encode(const JsonEncoder.withIndent('  ').convert(payload)));
+      // file_picker 13.x 的 saveFile 直接回傳 Uri?，並由 bytes 寫入檔案。
+      // type / allowedExtensions 對 saveFile 沒有作用，故不傳入。
+      final Uri? savedUri = await FilePicker.saveFile(
+        dialogTitle: '匯出座位資料',
+        fileName: 'seating_map_backup.json',
+        bytes: bytes,
+      );
+      if (savedUri != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('座位資料已匯出')));
+      }
+    } catch (error) {
+      _showError('匯出資料', error);
+    }
+  }
+
+  Rect _clampImportedRect(Rect rect) => Rect.fromLTRB(
+    rect.left.clamp(0.0, 1.0).toDouble(),
+    rect.top.clamp(0.0, 1.0).toDouble(),
+    rect.right.clamp(0.0, 1.0).toDouble(),
+    rect.bottom.clamp(0.0, 1.0).toDouble(),
+  );
+
+  List<SeatRegion> _fitImportedRegions(List<SeatRegion> source) {
+    if (source.isEmpty) return source;
+    var bounds = source.map((region) => region.rect).reduce((a, b) => a.expandToInclude(b));
+    // 若整組框超出圖片尺寸，等比例縮小整組框，保留彼此相對位置。
+    final scale = math.min(1.0, math.min(1 / bounds.width, 1 / bounds.height));
+    final scaled = source.map((region) {
+      final rect = Rect.fromLTRB(
+        bounds.center.dx + (region.rect.left - bounds.center.dx) * scale,
+        bounds.center.dy + (region.rect.top - bounds.center.dy) * scale,
+        bounds.center.dx + (region.rect.right - bounds.center.dx) * scale,
+        bounds.center.dy + (region.rect.bottom - bounds.center.dy) * scale,
+      );
+      return region.copyWith(rect: rect);
+    }).toList();
+    bounds = scaled.map((region) => region.rect).reduce((a, b) => a.expandToInclude(b));
+    final dx = bounds.left < 0 ? -bounds.left : (bounds.right > 1 ? 1 - bounds.right : 0.0);
+    final dy = bounds.top < 0 ? -bounds.top : (bounds.bottom > 1 ? 1 - bounds.bottom : 0.0);
+    return [
+      for (var index = 0; index < scaled.length; index++)
+        scaled[index].copyWith(
+          rect: _clampImportedRect(scaled[index].rect.shift(Offset(dx, dy))),
+          sortOrder: index,
+        ),
+    ];
+  }
+
+  Future<void> _importData() async {
+    if (!_isEditing || _isSaving) return;
+    PlatformFile? file;
+    try {
+      // file_picker 13.x 單檔選取使用 pickFile()，取消時回傳 null。
+      file = await FilePicker.pickFile(
+        type: FileType.custom,
+        allowedExtensions: const ['json'],
+      );
+    } catch (error) {
+      _showError('選取備份檔', error);
+      return;
+    }
+    if (file == null) return;
+
+    try {
+      // v13 的 PlatformFile 使用 readAsBytes()，不再使用 withData / bytes 欄位。
+      final bytes = await file.readAsBytes();
+      final data = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+      if (data['format'] != 'seating-map-backup' || data['version'] != 1) {
+        throw const FormatException('不支援的座位資料格式或版本');
+      }
+      final rawRegions = data['regions'] as List<dynamic>;
+      final imported = <SeatRegion>[];
+      for (var index = 0; index < rawRegions.length; index++) {
+        final item = rawRegions[index] as Map<String, dynamic>;
+        final rect = Rect.fromLTRB(
+          (item['left'] as num).toDouble(),
+          (item['top'] as num).toDouble(),
+          (item['right'] as num).toDouble(),
+          (item['bottom'] as num).toDouble(),
+        );
+        if (!rect.left.isFinite || !rect.top.isFinite || !rect.right.isFinite || !rect.bottom.isFinite || rect.isEmpty) {
+          throw FormatException('第 ${index + 1} 個座位框座標無效');
+        }
+        imported.add(SeatRegion(
+          name: item['name'] as String? ?? '',
+          keywords: (item['keywords'] as List<dynamic>? ?? const []).map((value) => value.toString()).toList(),
+          rect: rect,
+          sortOrder: index,
+        ));
+      }
+      final fittedRegions = _fitImportedRegions(imported);
+      final rotation = ((data['rotationQuarterTurns'] as num?)?.toInt() ?? 0) % 4;
+      final imageWidth = (data['imageWidth'] as num?)?.toDouble() ?? defaultMapWidth;
+      final imageHeight = (data['imageHeight'] as num?)?.toDouble() ?? defaultMapHeight;
+      if (!imageWidth.isFinite || !imageHeight.isFinite || imageWidth <= 0 || imageHeight <= 0) {
+        throw const FormatException('備份檔中的圖片尺寸無效');
+      }
+      String? importedImagePath;
+      Uint8List? importedImageBytes;
+      String? importedImageExtension;
+      final imageBase64 = data['imageBase64'] as String?;
+      if (imageBase64 != null && imageBase64.isNotEmpty) {
+        importedImageBytes = base64Decode(imageBase64);
+        importedImageExtension = _imageExtension(
+          'backup.${data['imageExtension'] ?? 'png'}',
+        );
+      }
+
+      final shouldReplace = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('匯入座位資料'),
+          content: Text('這會取代目前的 ${_regions.length} 個座位框，並載入備份中的 ${fittedRegions.length} 個座位框及地圖設定。是否繼續？'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('取消')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('取代並匯入')),
+          ],
+        ),
+      );
+      if (shouldReplace != true || !mounted) return;
+      if (importedImageBytes != null) {
+        final directory = await getApplicationDocumentsDirectory();
+        final imageFile = File(
+          '${directory.path}/seating_map_background.$importedImageExtension',
+        );
+        await imageFile.writeAsBytes(importedImageBytes, flush: true);
+        importedImagePath = imageFile.path;
+      }
+      setState(() => _isSaving = true);
+      await _repository.replaceAll(fittedRegions);
+      final savedRegions = await _repository.getAll();
+      await _settingsRepository.saveRotationQuarterTurns(rotation);
+      await _settingsRepository.saveImageSize(Size(imageWidth, imageHeight));
+      await _settingsRepository.saveImagePath(importedImagePath);
+      if (!mounted) return;
+      setState(() {
+        _regions
+          ..clear()
+          ..addAll(savedRegions);
+        _rotationQuarterTurns = rotation;
+        mapWidth = imageWidth;
+        mapHeight = imageHeight;
+        _imagePath = importedImagePath;
+        _selectedIndex = null;
+        _highlightedRegionId = null;
+        _isSaving = false;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) => _fitMapToViewport());
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已匯入 ${savedRegions.length} 個座位框；超出圖片範圍的框已整組移回圖片內')),
+        );
+      }
+    } catch (error) {
+      if (mounted) setState(() => _isSaving = false);
+      _showError('匯入資料', error);
+    }
+  }
+
   void _toggleEditing() {
     setState(() {
       _isEditing = !_isEditing;
@@ -646,7 +933,7 @@ class _SeatingMapPageState extends State<SeatingMapPage> {
                   )
                 : SafeArea(
                     top: false,
-                    bottom: false,
+                    bottom: true,
                     child: Column(
                     children: [
                       if (!_isEditing)
@@ -721,6 +1008,9 @@ class _SeatingMapPageState extends State<SeatingMapPage> {
                         onDelete: _deleteSelected,
                         rotationDegrees: _rotationQuarterTurns * 90,
                         onRotate: _rotateMap,
+                        onImportImage: _importImage,
+                        onExportData: _exportData,
+                        onImportData: _importData,
                       ),
                       Expanded(
                         child: LayoutBuilder(
@@ -733,6 +1023,7 @@ class _SeatingMapPageState extends State<SeatingMapPage> {
                             return SeatingMapCanvas(
                               mapWidth: mapWidth,
                               mapHeight: mapHeight,
+                              imagePath: _imagePath,
                               transformationController: _transformationController,
                               mode: _mode,
                               regions: _regions,
